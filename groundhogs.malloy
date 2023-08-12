@@ -1,21 +1,27 @@
-source: _groundhogs is table('duckdb:data/groundhogs.csv')
+source: groundhogs is table('duckdb:gen/groundhogs.csv')
 extend {
-    primary_key: the_day
+    primary_key: `date`
     accept: the_day, lug, shortname, city, region,
-            isGroundhog,  shadow, country
-    rename: saw_shadow is shadow
+            isGroundhog,  shadow, country, `date`, shadow
+    rename: is_groundhog is isGroundhog, saw_shadow is shadow
+    dimension:
+      -- spring_start is dateadd!date(DAY, 7 * 6, `date`)
+      spring_start is date(2022, 10, 02)
 }
+-- https://en.wikipedia.org/wiki/Groundhog_Day
+-- if a groundhog emerges from its burrow on this day and sees its shadow,
+-- it will retreat to its den and winter will go on for six more weeks
+-- spring_start is pick `date` + weeks(6) when shadow
+--              else `date`
+--
 
-query: groundhogs is _groundhogs -> {
-    where: country = 'USA'
-}
 
-/*
+--/*
 run: groundhogs -> {
     project: *
     top: 10
 }
-*/
+------*/
 
 
 /*extend {
