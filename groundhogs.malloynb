@@ -4,9 +4,12 @@ Welcome to the Groundhog Day data analysis demo in Malloy!
 The purpose of this demo is to:
 
 1. Help me learn Malloy (I'm a complete newb)
-2. Highlight current sharp edges and areas of improvement
-3. Visually understand the prophetic powers of prognosticating groundhogs
-   through data.
+
+2. Highlight current sharp edges and areas of improvement for the Malloy team
+   from the perspective of said newb.
+
+3. Better understand the prophetic powers of prognosticating groundhogs through
+   the power of data.
 
 ## Assumptions
 To make things simple we will define "Spring" as:
@@ -14,12 +17,9 @@ To make things simple we will define "Spring" as:
 \> The maximum "daily average maximum temperature" of Feb and March is >= 40
 
 I can't say for certain this is how the groundhogs themselves define "spring",
-but it's good enough for our purpose. Future iterations we should probably
-least refine this metric refinement by state and preferably interview the
-groundhogs themselves.
-
-It will also allow us to do some fun visualizations demonstrating the result
-of starting with false premisis and how to visually graph your own biases.
+but it's good enough for our purpose. Future iterations should probably
+refine this metric to each state and preferably interview the groundhogs
+themselves.
 
 ## Data
 Data is included in this repository in both the raw and generated form. To
@@ -62,7 +62,7 @@ but I have to do it in multiple named steps instead:
 source: ... extend { ... } -> { project: ... } -> { primary_key: }
 ```
 
-The things blocking this are:
+(this is for the malloy devs) the things blocking this are:
 
 1. Get only a certain set of fields for better viewing. Unforunately in the
    `extend` you have to `accept` all fields you use in a `dimension` meaning I
@@ -140,29 +140,37 @@ query: T2 is T1 -> {
     is_early_spring is early_spring_temp_max >= 40
 }
 
-source: YearIsLateSpring is T2 extend {
+source: YearStateSpring is T2 extend {
   primary_key: year_state
 }
 >>>markdown
 ## Sidequest: get context
 
 It would be nice to include some contextual information such as how often is a
-given state has early spring. Let's create some sources for that.
+given state has early spring. It would also be nice to have some kind of
+reference for how difficult it is for a prophet (groundhog or not) to predict
+whether spring will come for a given place. Let's use an extremely simplistic
+measurement as the distance (absolute difference) from our definition of spring.
+We'll also compute the maximum distance so we have something to normalize with.
+
+Let's create some sources for that.
 
 >>>malloy
 
-run: YearIsLateSpring -> {
-  project: *
-  where: state = 'New Jersey'
-  and is_early_spring = false
-}
-
-query: PES0 is YearIsLateSpring -> {
+query: PES0 is YearStateSpring -> {
   group_by: state
   aggregate:
     ratio_early_spring is sum(pick 1 when is_early_spring else 0) / count()
+    state_avg_distance_spring is sum(abs(40 - early_spring_temp_max)) / count()
+    -- maximum distance across all states/years
+    max_distance_spring is all(max(abs(40 - early_spring_temp_max)))
+} -> {
+  project:
+    -- The distance factor lets us put a weight on the prophetic
+    -- vision of our shadow viewing groundpig.
+    *, state_distance_factor is state_avg_distance_spring / max_distance_spring
 }
-source: PercEarlySpring is PES0 extend {
+source: AllYearsStateSpring is PES0 extend {
   primary_key: state
 }
 
@@ -173,18 +181,16 @@ about
 
 >>>malloy
 query: GroundhogPredictions is Groundhogs -> {
-  join_one: YearIsLateSpring with year_state
-  join_one: PercEarlySpring with state
+  join_one: YearStateSpring with year_state
+  join_one: AllYearsStateSpring with state
   project:
     *,
-    is_early_spring is YearIsLateSpring.is_early_spring,
-    accurate is YearIsLateSpring.is_early_spring = predict_early_spring,
-    state_ratio_early_spring is PercEarlySpring.ratio_early_spring,
-}
+    YearStateSpring.is_early_spring,
+    AllYearsStateSpring.state_avg_distance_spring,
+    AllYearsStateSpring.state_distance_factor,
+    accurate is YearStateSpring.is_early_spring = predict_early_spring,
+    state_ratio_early_spring is AllYearsStateSpring.ratio_early_spring,
 
-run: GroundhogPredictions -> {
-  project: *
-  where: state_ratio_early_spring ? 1 to 99
 }
 
 >>>markdown
@@ -197,7 +203,10 @@ and state averages.
 
 >>>malloy
 query: GroundhogAccuracy is GroundhogPredictions -> {
-  group_by: id, name, state_ratio_early_spring, state
+  group_by:
+    id, name, state
+    -- note: remains constant
+    state_ratio_early_spring, state_distance_factor, state_avg_distance_spring
   aggregate:
     ratio_accuracy is avg(pick 1 when accurate else 0),
     ratio_predict_early_spring is
@@ -208,13 +217,16 @@ query: GroundhogAccuracy is GroundhogPredictions -> {
     earliest_prediction is min(concat(year_)),
 }
 
--- Order and display data to draw (false) conclusions
-run: GroundhogAccuracy -> {
+query: RodentProphets is GroundhogAccuracy -> {
   project:
     name,
 
     # percent
     ratio_accuracy,
+
+    -- multiply by a thousand to make it seem more significant
+    absolute_prophetic_wisdom is 1000 * ratio_accuracy / state_distance_factor
+    state_avg_distance_spring,
 
     # percent
     ratio_is_early_spring,
@@ -228,6 +240,11 @@ run: GroundhogAccuracy -> {
     state,
     earliest_prediction,
     num_predictions,
+}
+
+-- Order and display data to draw (false) conclusions
+run: RodentProphets -> {
+  project: *
   order_by:
     ratio_accuracy desc, ratio_is_early_spring desc
   where:
@@ -249,6 +266,40 @@ accuracy in a state that has early spring 100% of the time. However, it's
 important to remember they might have a different definition of "spring" then
 we do.
 
+But wait, let's see how things look if instead of accuracy we sort by the aptly
+named `maximum_prophetic_wisdom`
+
+>>>malloy
+-- Order and display data to draw prophetic conclusions
+run: RodentProphets -> {
+  project: *
+  order_by:
+    absolute_prophetic_wisdom desc
+  where:
+    num_predictions > 5
+}
+
 >>>markdown
-## Drilling Down and Visualizing Data
+We can now see clearly that General Boregard is as untinteresting as he seemed,
+with only 1,576 points of prophecy.  Being highly accurate in a state that is
+on average 25 degrees above "spring" is not hard.
+
+Chuckles, as we also thought, is very high (top in fact) with 9,689 points of
+prophetic wisdom. He began his illustrious career in only 2008 and has
+successfully dominated the prophecy charts 15 times. The absolute legend
+Punxsutawney Phil himself clocks in at only 5,569, proving that there is
+still room for the young in the field of prophecy.
+
+## Obligatory legal warning
+
+I am neither a statistician nor a data scientist (I am, in fact, a programmer
+with a love for programming languages including building my own from [absolute
+scratch](http://github.com/civboot/fngi)) and these measurements are completely
+made up. If you know the _proper_ way to compare groundhog abilities please
+open an issue or a PR! If it's not too much work, I will add an adendum :D
+
+This code is Community Commons (CC0), but I strongly recommend against copying
+either it or it's methology unless (perhaps) if it's on your own journey to
+learning Malloy or you would like to make fun of it.
+
 
