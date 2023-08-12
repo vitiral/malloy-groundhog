@@ -1,9 +1,13 @@
 >>>markdown
 Welcome to the Groundhog Day data analysis demo in Malloy!
 
+![groundhog day](https://akns-images.eonline.com/eol_images/Entire_Site/201611/rs_596x341-160201175140-Groundhog_Day_again.gif?fit=around%7C596:341&output-quality=90&crop=596:341;center,top)
+
 The purpose of this demo is to:
 
-1. Help me learn Malloy (I'm a complete newb)
+1. Help me learn Malloy. I've done a fairly intense 6 months or so of SQL but am not a data engineer
+   and mostly do "normal" software development (Java, Kotlin, C, Python, Lua...
+   that sort of thing)
 
 2. Highlight current sharp edges and areas of improvement for the Malloy team
    from the perspective of said newb.
@@ -11,12 +15,21 @@ The purpose of this demo is to:
 3. Better understand the prophetic powers of prognosticating groundhogs through
    the power of data.
 
+Callout to [Data is
+Plural](https://www.data-is-plural.com/archive/2023-02-08-edition/) for the
+link to groundhog da<b>y</b>ta
+
 ## Assumptions
-To make things simple we will define "Spring" as:
+An accurate groundhog day prediction is whether the groundhog correctly
+predicts that spring will NOT come within the next 6 weeks (because he "sees
+his shadow" and retreats to his den).
 
-\> The maximum "daily average maximum temperature" of Feb and March is >= 40
+To make things simple we will define "Early Spring" as:
 
-I can't say for certain this is how the groundhogs themselves define "spring",
+\> Spring has sprung early when the maximum "daily average maximum temperature"
+\> of Feb and March is >= 40
+
+I can't say for certain this is how the groundhogs themselves define "Spring",
 but it's good enough for our purpose. Future iterations should probably
 refine this metric to each state and preferably interview the groundhogs
 themselves.
@@ -40,9 +53,9 @@ Raw data used in this demo can be downloaded from
 
 The csv files are generated using the python scripts in `scripts/`
 
-## Getting our Groundhogs
-In Malloy we use a `source` to pull data in and then `extend` it to `rename`
-and calculate (`dimension`) a few fields, as well as define a primary key
+## Getting our Groundhog Data
+In Malloy we use a `source` to pull data in and then `extend`, `rename`
+and `dimension` (calculate) a few fields, as well as define a primary key
 for joins.
 >>>malloy
 source: GroundhogsRaw is duckdb.table("./gen/groundhogs.csv") extend {
@@ -92,7 +105,7 @@ query: G1 is GroundhogsRaw -> {
     state,
     year_state is concat(year_, ' ', state),
     predict_early_spring,
-    name, id
+    name, id, `day` is early_spring
 }
 
 -- slap on a primary key
@@ -135,6 +148,7 @@ Oh well, such is life with a new-ish language. **Just Do It:**
 source: T1 is duckdb.table('./gen/TempMax.csv') extend {
   accept:      `date`, state, max_temp
   rename:      temp_max is max_temp
+  dimension:   SPRING_TEMP is 40
 }
 
 -- aggregate the stuff we renamed
@@ -142,13 +156,14 @@ query: T2 is T1 -> {
   where:     month(`date`) ? 2 to 3
   aggregate: early_spring_temp_max is max(temp_max)
   group_by:
-    year_ is year(`date`),
+    year_ is year(`date`)
     state
+    SPRING_TEMP -- yuck, wish we had "real" constants
 } -> {
   project:
     *,
     year_state is concat(year_, ' ', state)
-    is_early_spring is early_spring_temp_max >= 40
+    is_early_spring is early_spring_temp_max >= SPRING_TEMP
 }
 
 -- slap on a primary key
@@ -177,9 +192,11 @@ query: PES0 is YearStateSpring -> {
   group_by: state
   aggregate:
     ratio_early_spring is sum(pick 1 when is_early_spring else 0) / count()
-    state_avg_distance_spring is sum(abs(40 - early_spring_temp_max)) / count()
+    state_avg_distance_spring is
+      sum(abs(SPRING_TEMP - early_spring_temp_max)) / count()
     -- maximum distance across all states/years
-    max_distance_spring is all(max(abs(40 - early_spring_temp_max)))
+    max_distance_spring is
+      all(max(abs(SPRING_TEMP - early_spring_temp_max)))
 } -> {
   project:
     -- The distance factor lets us put a weight on the prophetic
@@ -211,6 +228,12 @@ query: GroundhogPredictions is Groundhogs -> {
     AllYearsStateSpring.state_avg_distance_spring,
     AllYearsStateSpring.state_distance_factor,
     state_ratio_early_spring is AllYearsStateSpring.ratio_early_spring,
+} -> {
+  project: *
+    -- Let's try to create an absolute measure of prophecy powers.
+    -- b/4242: multiply by a thousand to boost our numbers
+    prophetic_wisdom is 1000 * (pick 1 when accurate else 0)
+                             / state_distance_factor
 }
 
 >>>markdown
@@ -235,6 +258,7 @@ query: GroundhogAccuracy is GroundhogPredictions -> {
       sum(pick 1 when is_early_spring else 0) / count()
     num_predictions is count(),
     earliest_prediction is min(concat(year_)),
+    prophetic_wisdom is sum(prophetic_wisdom) / count()
 }
 
 -- Make a view that is neat for displaying
@@ -246,21 +270,23 @@ query: RodentProphets is GroundhogAccuracy -> {
     ratio_accuracy,
 
     -- b/4242: multiply by a thousand to boost our numbers
-    prophetic_wisdom is 1000 * ratio_accuracy / state_distance_factor
-    state_avg_distance_spring,
+    -- prophetic_wisdom is 1000 * ratio_accuracy / state_distance_factor
+
+    prophetic_wisdom
+    state_avg_distance_spring
 
     # percent
-    ratio_is_early_spring,
+    ratio_is_early_spring
 
     # percent
-    state_ratio_early_spring,
+    state_ratio_early_spring
 
     # percent
-    ratio_predict_early_spring,
+    ratio_predict_early_spring
 
     state,
-    earliest_prediction,
-    num_predictions,
+    earliest_prediction
+    num_predictions
 }
 
 -- Order and display data to draw (false) conclusions
@@ -309,16 +335,100 @@ successfully dominated the prophecy charts 15 times. The absolute legend
 Punxsutawney Phil himself clocks in at only 5,569 widom points, proving that
 there is still room for the young in the field of prophecy.
 
+>>>malloy
+
+# bar_chart
+run: RodentProphets -> {
+  group_by: state
+  aggregate: prophetic_wisdom is sum(prophetic_wisdom)
+}
+
+>>>markdown
+Wow, Penselvania is the place to go for large-toothed prophecy!
+
+Now let's look at the top prophecy states over time
+
+>>>malloy
+-- First let's get the top 5 states which we will call the "Prophecy5"
+query: P5 is RodentProphets -> {
+  group_by: state
+  aggregate: sum_wisdom is sum(prophetic_wisdom)
+  order_by: sum_wisdom desc
+  top: 5
+}
+source: Prophecy5 is P5 extend { primary_key: state }
+
+-- Then let's graph them over time
+-- # line_chart
+run: GroundhogPredictions -> {
+  join_one: Prophecy5 with state
+  group_by: day_year is `day`.year
+  -- project: `day`, year_
+  where: `day` < @2000
+}
+
+
+-- Then let's graph them over time
+# line_chart
+run: GroundhogPredictions -> {
+  join_one: Prophecy5 with state
+  where: Prophecy5.state != null
+  group_by: `year` is `day`.year -- groundhog day
+  aggregate: prophetic_wisdom is sum(prophetic_wisdom)
+  group_by: state
+  top: 1000 -- https://github.com/malloydata/malloy/issues/1291
+}
+>>>markdown
+As we can see, Penselvania is still the small-furry-prophet center of the world
+and also has the benefit of history when comparing total aggregated points, but
+New York is an up-and-comming competitor!
+
+>>>markdown
 ## Obligatory legal warning
 
+![not a meterologist](https://www.digitalmomblog.com/wp-content/uploads/2022/01/Punxsutawney-Phil-groundhog-day-meme-.jpeg.webp)
+
 I am neither a statistician nor a data scientist (I am, in fact, a programmer
-with a love for programming languages including building my own from [absolute
-scratch](http://github.com/civboot/fngi)) and many of these methods were made
-up by me because they seemed the best I could do at the time.  If you know the
+with a love for programming languages) and many of these methods were made up
+by me because they seemed the best I could do at the time.  If you know the
 _proper_ way to compare groundhog shadow-predictions please open an issue or a
 PR! If it's not too much work, I will add an adendum :D
 
 This code is Community Commons (CC0), but I strongly recommend against copying
 either it or it's methology unless (perhaps) it's for your own journey to
 learning Malloy and/or you would like to make fun of my work.
+
+## Some Useless Visualizaitons
+Let's see which states have racked up the most prophecy
+
+## Appendix
+This is a worklog of the issues I hit and help I received while creating this
+demo. Perhaps a Malloy developer will find it useful as a newbie experience
+snapshot or something.
+
+* Dockfixes to quickstart
+  * `project *` https://github.com/malloydata/quickstart/pull/1 related to
+    above: there is no schema explorer in the quickstart
+  * [link](https://github.com/malloydata/quickstart/issues/2)
+  * [Minor grammar](https://github.com/malloydata/quickstart/pull/3)
+
+* Documentation fixes
+  * Grammar fixes in the documentation and some rewording suggestions
+    ([link](https://github.com/malloydata/malloydata.github.io/pull/75)) Minor
+    wording issue with namming a (percent tagged) a ratio as a percent
+  * ([link](https://github.com/malloydata/malloydata.github.io/pull/81))
+
+* Lanugage issues
+  * ergonomics issue where you have to repeat yourself with `rename`/etc
+    ([link](https://github.com/malloydata/malloy/issues/1288)) would be nice to
+  * have assertions ([link](https://github.com/malloydata/malloy/issues/1290))
+  * line chart requires `top` ([link](https://github.com/malloydata/malloy/issues/1291))
+
+I also got help on
+[slack](https://malloy-community.slack.com/archives/C025JAK8G0N/p1691817570702699)
+
+Overall my expeience has been extremely positive.  It is a young language and
+has a few sharp edges (which is to be expected) The maintainers were very
+helpful and responded and merged the fixes I submitted promptly. It was
+a very pleasant experience overall.
 
