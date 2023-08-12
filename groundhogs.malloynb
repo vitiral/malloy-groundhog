@@ -75,20 +75,11 @@ but I have to do it in multiple named steps instead:
 source: ... extend { ... } -> { project: ... } -> { primary_key: }
 ```
 
-(this is for the malloy devs) the things blocking this are:
+However, there are some things blocking this in Malloy. To work within
+the current constraints we will simply name each "stage" of our pipeline.
 
-1. Get only a certain set of fields for better viewing. Unforunately in the
-   `extend` you have to `accept` all fields you use in a `dimension` meaning I
-   need the intermediary `project` to fully filter them (I like my data to be
-   neat when I print)
-
-2. You don't seem to be able to do a pipeline of `source -> query -> source`,
-   instead you need to name each intermediary stage.
-
-3. You cannot define a primary key in a query (only a source)
-
-Anyway, let's work around these issues and transform our data so that its
-dimensions are better aligned with the kinds of questions we might ask it:
+Our goal is to transform our data so that its dimensions are better aligned
+with the kinds of questions we might ask it:
 
 * `year_state` will be the primary key we join against our temperature data.
 
@@ -132,16 +123,6 @@ join against them. As noted in [Data](#data) we are using data from
 \> Note: temp_max is the **average maximum temperature** across all days in the
 \> month (I don't think it's the maximum maximum temperature), not that this
 \> really matters much for our purposes.
-
-(for the Malloy devs) the below query needs to be split into three parts because:
-
-1. Malloy doesn't support "projecting" a value that was aggregated
-   in that `extend` block
-   (I can't do `is_early_spring is early_spring_temp_max >= 40`)
-
-2. query doesn't support primary_key
-
-Oh well, such is life with a new-ish language. **Just Do It:**
 
 >>>malloy
 
