@@ -55,23 +55,35 @@ source: GroundhogsRaw is duckdb.table("./gen/groundhogs.csv") extend {
     predict_early_spring is shadow = 0
 }
 >>>markdown
-The next bit I would _like_ to do in a single pipeline like:
+The next bit I would _like_ to do in a single pipeline like the following,
+but I have to do it in multiple named steps instead:
 
 ```
 source: ... extend { ... } -> { project: ... } -> { primary_key: }
 ```
 
-Now let's transform our data so it's dimensions are better aligned with
-our questions.
+The things blocking this are:
 
-The main things I want are:
+1. Get only a certain set of fields for better viewing. Unforunately in the
+   `extend` you have to `accept` all fields you use in a `dimension` meaning I
+   need the intermediary `project` to fully filter them (I like my data to be
+   neat when I print)
 
-1. Select only a certain set of fields. Unforunately in the `extend` you have
-   to `accept` all fields you use in a `dimension` meaning I need the intermediary
-   `project` to fully filter them (I like my data to be neat when I print)
 2. You don't seem to be able to do a pipeline of `source -> query -> source`,
    instead you need to name each intermediary stage.
+
 3. You cannot define a primary key in a query (only a source)
+
+Anyway, let's work around these issues and transform our data so that its
+dimensions are better aligned with the kinds of questions we might ask it:
+
+* year_state will be the primary key we join against our temperature data.
+
+* `id` is the "unique name" of the groundhog that we will group by.
+
+* `saw_shadow` indicates whether the groundhog predicts spring will "come late"
+  (be at least 6 weeks away)
+
 >>>malloy
 query: G1 is GroundhogsRaw -> {
    project:
@@ -86,23 +98,20 @@ source: Groundhogs is G1 extend {
   primary_key: year_state
 }
 >>>markdown
-Before we continue, take a look at the current schema. To summarize:
+Before we continue, take a look at the current schema.
 
-* year_state will be the primary key we join against our temperature data.
-* `id` is the "unique name" of the groundhog that we will group by.
-* `saw_shadow` indicates whether the groundhog predicts spring will "come late"
-  (be at least 6 weeks away)
 >>>malloy
 run: Groundhogs -> {
   project: *
   top: 10
 }
+
 >>>markdown
 ## Get our Temperature data
 
-Now that we have our groundhogs and their predictions, let's
-get some data to join against them. As noted in [Data]{#data} we are using
-data from [ncei.noaa.gov](ncei.noaa.gov) transformed to CSV with a script.
+Now that we have our groundhogs and their predictions, let's get some data to
+join against them. As noted in [Data]{#data} we are using data from
+[ncei.noaa.gov](ncei.noaa.gov) transformed to CSV with a script.
 
 \> Note: temp_max is the **average maximum temperature** across all days in the
 \> month (it is not the maximum maximum temperature)
@@ -137,9 +146,9 @@ source: YearIsLateSpring is T2 extend {
 >>>markdown
 ## Sidequest: get context
 
-It would be nice to include some contextual information such as
-how often is a given state in early spring. Let's create some sources
-for that.
+It would be nice to include some contextual information such as how often is a
+given state has early spring. Let's create some sources for that.
+
 >>>malloy
 
 run: YearIsLateSpring -> {
@@ -162,10 +171,12 @@ run: PercEarlySpring -> {
   where: perc_early_spring ? 1 to 100
   order_by: perc_early_spring asc
 }
+
 >>>markdown
 ## Putting it all together
 Now that we have our data let's join it and perform the calculations we care
 about
+
 >>>malloy
 query: GroundhogPredictions is Groundhogs -> {
   join_one: YearIsLateSpring with year_state
@@ -181,16 +192,15 @@ run: GroundhogPredictions -> {
   project: *
   where: state_perc_early_spring ? 1 to 99
 }
+
 >>>markdown
-
 Finally let's aggregate our primary result (`perc_accuracy`, the most important
-metric for any prognosticating eoswnr) as well as some reference points
-such as per_predict_early_spring and perc_is_early_spring.
+metric for any prophetic rodent) as well as some reference points such as
+`perc_predict_early_spring` and `perc_is_early_spring`.
 
-Now let's do our grouping and aggregation, as well as a few extra ones:
+Let's also get often the groundhog predicts spring to compare against accuracy
+and state averages.
 
-* How often the groundhog predicts spring (to compare against accuracy and use
-  later)
 >>>malloy
 query: GroundhogAccuracy is GroundhogPredictions -> {
   group_by: id, name, state_perc_early_spring, state
@@ -222,8 +232,17 @@ run: GroundhogAccuracy -> {
 }
 >>>markdown
 
-Right away we can see that the top groundhog "General Beauregard Lee" is a cheater: sure he's accurate 90% of the time, but it's also spring 100% of the time in Georgia!
+Right away we can see that the top groundhog "General Beauregard Lee" is a
+cheater: sure he's accurate 90% of the time, but it's also spring 100% of the
+time in Georgia!
 
-Prophet "Chuckles" is a significantly more interesting case. Not only is he prophetic, but his state has undergone quite a lot of warming: it's lifetime average of early spring is only 30%, but it's average since predictions started (2008) is up to 73%.
+Prophet "Chuckles" is a significantly more interesting case. Not only is he
+prophetic, but his state has undergone quite a lot of warming: it's lifetime
+average of early spring is only 30%, but it's average since predictions started
+(2008) is up to 73%.
 
-There's plenty of rodents we could also mock: The next three have only an 71% - 83% accuracy in a state where it's spring 100% of the time. However, it's important to remember they might have a different definition of "spring" then we do.
+There's plenty of rodents we could mock: The next three have only an 71% - 83%
+accuracy in a state that has early spring 100% of the time. However, it's
+important to remember they might have a different definition of "spring" then
+we do.
+
