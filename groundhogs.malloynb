@@ -160,16 +160,10 @@ run: YearIsLateSpring -> {
 query: PES0 is YearIsLateSpring -> {
   group_by: state
   aggregate:
-    perc_early_spring is 100 * sum(pick 1 when is_early_spring else 0) / count()
+    ratio_early_spring is sum(pick 1 when is_early_spring else 0) / count()
 }
 source: PercEarlySpring is PES0 extend {
   primary_key: state
-}
-
-run: PercEarlySpring -> {
-  project: *
-  where: perc_early_spring ? 1 to 100
-  order_by: perc_early_spring asc
 }
 
 >>>markdown
@@ -185,31 +179,31 @@ query: GroundhogPredictions is Groundhogs -> {
     *,
     is_early_spring is YearIsLateSpring.is_early_spring,
     accurate is YearIsLateSpring.is_early_spring = predict_early_spring,
-    state_perc_early_spring is PercEarlySpring.perc_early_spring,
+    state_ratio_early_spring is PercEarlySpring.ratio_early_spring,
 }
 
 run: GroundhogPredictions -> {
   project: *
-  where: state_perc_early_spring ? 1 to 99
+  where: state_ratio_early_spring ? 1 to 99
 }
 
 >>>markdown
-Finally let's aggregate our primary result (`perc_accuracy`, the most important
+Finally let's aggregate our primary result (`ratio_accuracy`, the most important
 metric for any prophetic rodent) as well as some reference points such as
-`perc_predict_early_spring` and `perc_is_early_spring`.
+`ratio_predict_early_spring` and `ratio_is_early_spring`.
 
 Let's also get often the groundhog predicts spring to compare against accuracy
 and state averages.
 
 >>>malloy
 query: GroundhogAccuracy is GroundhogPredictions -> {
-  group_by: id, name, state_perc_early_spring, state
+  group_by: id, name, state_ratio_early_spring, state
   aggregate:
-    perc_accuracy is 100 * avg(pick 1 when accurate else 0),
-    perc_predict_early_spring is
-      100 * sum(pick 1 when predict_early_spring else 0) / count()
-    perc_is_early_spring is
-      100 * sum(pick 1 when is_early_spring else 0) / count()
+    ratio_accuracy is avg(pick 1 when accurate else 0),
+    ratio_predict_early_spring is
+      sum(pick 1 when predict_early_spring else 0) / count()
+    ratio_is_early_spring is
+      sum(pick 1 when is_early_spring else 0) / count()
     num_predictions is count(),
     earliest_prediction is min(concat(year_)),
 }
@@ -218,15 +212,24 @@ query: GroundhogAccuracy is GroundhogPredictions -> {
 run: GroundhogAccuracy -> {
   project:
     name,
-    perc_accuracy,
-    perc_is_early_spring,
-    state_perc_early_spring,
-    perc_predict_early_spring,
+
+    # percent
+    ratio_accuracy,
+
+    # percent
+    ratio_is_early_spring,
+
+    # percent
+    state_ratio_early_spring,
+
+    # percent
+    ratio_predict_early_spring,
+
     state,
     earliest_prediction,
     num_predictions,
   order_by:
-    perc_accuracy desc, perc_is_early_spring desc
+    ratio_accuracy desc, ratio_is_early_spring desc
   where:
     num_predictions > 5
 }
@@ -245,4 +248,7 @@ There's plenty of rodents we could mock: The next three have only an 71% - 83%
 accuracy in a state that has early spring 100% of the time. However, it's
 important to remember they might have a different definition of "spring" then
 we do.
+
+>>>markdown
+## Drilling Down and Visualizing Data
 
