@@ -1,0 +1,203 @@
+>>>markdown
+Welcome to the Groundhog Day data analysis demo in Malloy!
+
+The purpose of this demo is to:
+
+1. Help me learn Malloy (I'm a complete newb)
+2. Highlight current sharp edges and areas of improvement
+3. Visually understand the prophetic powers of prognosticating groundhogs
+   through data.
+
+## Assumptions
+To make things simple we will define "Spring" as:
+
+\> The maximum "daily average maximum temperature" of Feb and March is >= 40
+
+I can't say for certain this is how the groundhogs themselves define "spring",
+but it's good enough for our purpose. Future iterations we should probably
+least refine this metric refinement by state and preferably interview the
+groundhogs themselves.
+
+It will also allow us to do some fun visualizations demonstrating the result
+of starting with false premisis and how to visually graph your own biases.
+
+## Data
+Data is included in this repository in both the raw and generated form. To
+re-generate the data from it's `raw/` form into it's `gen/` form run:
+
+```
+make gen
+```
+
+Raw data used in this demo can be downloaded from
+
+* `raw_data/noaa.txt`: ncei.noaa.gov
+  (`https://www.ncei.noaa.gov/pub/data/cirs/climdiv/climdiv-norm-tmaxdv-v1.0.0-{date}`
+  (note: the date changes)
+  * This is a narly custom text format. See
+    [`scripts/noaa.py`](./scripts/noaa.py) for how I converted the data to CSV
+* `raw_data/groundhogs.json` copy/pasted from https://groundhog-day.com/api
+
+The csv files are generated using the python scripts in `scripts/`
+
+## Getting our Groundhogs
+In Malloy we use a `source` to pull data in and then `extend` it to `rename`
+and calculate (`dimension`) a few fields, as well as define a primary key
+for joins.
+>>>malloy
+source: GroundhogsRaw is duckdb.table("./gen/groundhogs.csv") extend {
+  primary_key: year_
+  rename: id is slug, state is region
+  -- null for fields like: "No Record.,1897-02-02"
+  where: shadow != null
+  dimension:
+    year_ is year(early_spring),
+    predict_early_spring is shadow = 0
+}
+>>>markdown
+The next bit I would _like_ to do in a single pipeline like:
+
+```
+source: ... extend { ... } -> { project: ... } -> { primary_key: }
+```
+
+Now let's transform our data so it's dimensions are better aligned with
+our questions.
+
+The main things I want are:
+
+1. Select only a certain set of fields. Unforunately in the `extend` you have
+   to `accept` all fields you use in a `dimension` meaning I need the intermediary
+   `project` to fully filter them (I like my data to be neat when I print)
+2. You don't seem to be able to do a pipeline of `source -> query -> source`,
+   instead you need to name each intermediary stage.
+3. You cannot define a primary key in a query (only a source)
+>>>malloy
+query: G1 is GroundhogsRaw -> {
+   project:
+    year_ is year(early_spring),
+    state,
+    year_state is concat(year_, ' ', state),
+    predict_early_spring,
+    name, id
+}
+source: Groundhogs is G1 extend {
+  -- you can't do `primary_key: (year_, state)`
+  primary_key: year_state
+}
+>>>markdown
+Before we continue, take a look at the current schema. To summarize:
+
+* year_state will be the primary key we join against our temperature data.
+* `id` is the "unique name" of the groundhog that we will group by.
+* `saw_shadow` indicates whether the groundhog predicts spring will "come late"
+  (be at least 6 weeks away)
+>>>malloy
+run: Groundhogs -> {
+  project: *
+  top: 10
+}
+>>>markdown
+## Get our Temperature data
+
+Now that we have our groundhogs and their predictions, let's
+get some data to join against them. As noted in [Data]{#data} we are using
+data from [ncei.noaa.gov](ncei.noaa.gov) transformed to CSV with a script.
+
+\> Note: temp_max is the **average maximum temperature** across all days in the
+\> month (it is not the maximum maximum temperature)
+
+The below query needs to be split into three parts because:
+1. Malloy doesn't support "projecting" a value that was aggregated
+   in that `extend` block
+   (I can't do `is_late_spring is early_spring_temp_max < 40`)
+2. query doesn't support primary_key
+>>>malloy
+
+source: T1 is duckdb.table('./gen/TempMax.csv') extend {
+  accept:      `date`, state, max_temp
+  rename:      temp_max is max_temp
+}
+query: T2 is T1 -> {
+  where:     month(`date`) ? 2 to 3
+  aggregate: early_spring_temp_max is max(temp_max)
+  group_by:
+    year_ is year(`date`),
+    state
+} -> {
+  project:
+    *,
+    year_state is concat(year_, ' ', state)
+    is_early_spring is early_spring_temp_max >= 40
+}
+
+source: YearIsLateSpring is T2 extend {
+  primary_key: year_state
+}
+>>>markdown
+## Sidequest: get context
+
+It would be nice to include some contextual information such as
+how often is a given state in early spring. Let's create some sources
+for that.
+>>>malloy
+
+run: YearIsLateSpring -> {
+  project: *
+  where: state = 'New Jersey'
+  and is_early_spring = false
+}
+
+
+query: PES0 is YearIsLateSpring -> {
+  group_by: state
+  aggregate:
+    perc_early_spring is 100 * sum(pick 1 when is_early_spring else 0) / count()
+}
+source: PercEarlySpring is PES0 extend {
+  primary_key: state
+}
+
+run: PercEarlySpring -> {
+  project: *
+  where: perc_early_spring ? 1 to 100
+  order_by: perc_early_spring asc
+}
+>>>markdown
+## Putting it all together
+Now that we have our data let's join it and perform the calculations we care
+about
+>>>malloy
+query: GroundhogPredictions is Groundhogs -> {
+  join_one: YearIsLateSpring with year_state
+  join_one: PercEarlySpring with year_state
+  project:
+    *,
+    is_early_spring is YearIsLateSpring.is_early_spring,
+    accurate is YearIsLateSpring.is_early_spring = predict_early_spring,
+    state_perc_early_spring is PercEarlySpring.perc_early_spring,
+}
+>>>markdown
+
+Finally let's aggregate our primary result (`perc_accuracy`, the most important
+metric for any prognosticating groundhog) as well as some reference points
+such as per_predict_early_spring and perc_is_early_spring.
+
+Now let's do our grouping and aggregation, as well as a few extra ones:
+
+* How often the groundhog predicts spring (to compare against accuracy and use
+  later)
+>>>malloy
+query: GroundhogAccuracy is GroundhogPredictions -> {
+  group_by: id, name, state_perc_early_spring
+  aggregate:
+    per_accuracy is 100 * avg(pick 1 when accurate else 0),
+    perc_predict_early_spring is
+      100 * sum(pick 1 when predict_early_spring else 0) / count()
+    perc_is_early_spring is
+      100 * sum(pick 1 when predict_early_spring else 0) / count()
+    num_predictions is count()
+}
+>>>markdown
+
+
