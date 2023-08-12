@@ -85,6 +85,7 @@ dimensions are better aligned with the kinds of questions we might ask it:
   (be at least 6 weeks away)
 
 >>>malloy
+-- eliminate uninteresting columns
 query: G1 is GroundhogsRaw -> {
    project:
     year_ is year(early_spring),
@@ -93,6 +94,8 @@ query: G1 is GroundhogsRaw -> {
     predict_early_spring,
     name, id
 }
+
+-- slap on a primary key
 source: Groundhogs is G1 extend {
   -- you can't do `primary_key: (year_, state)`
   primary_key: year_state
@@ -111,22 +114,30 @@ run: Groundhogs -> {
 
 Now that we have our groundhogs and their predictions, let's get some data to
 join against them. As noted in [Data]{#data} we are using data from
-[ncei.noaa.gov](ncei.noaa.gov) transformed to CSV with a script.
+[ncei.noaa.gov](http://ncei.noaa.gov) transformed to CSV with a script.
 
 \> Note: temp_max is the **average maximum temperature** across all days in the
-\> month (it is not the maximum maximum temperature)
+\> month (I don't think it's the maximum maximum temperature), not that this
+\> really matters much for our purposes.
 
-The below query needs to be split into three parts because:
+(for the Malloy devs) the below query needs to be split into three parts because:
+
 1. Malloy doesn't support "projecting" a value that was aggregated
    in that `extend` block
    (I can't do `is_early_spring is early_spring_temp_max >= 40`)
+
 2. query doesn't support primary_key
+
+Oh well, such is life with a new-ish language. **Just Do It:**
+
 >>>malloy
 
 source: T1 is duckdb.table('./gen/TempMax.csv') extend {
   accept:      `date`, state, max_temp
   rename:      temp_max is max_temp
 }
+
+-- aggregate the stuff we renamed
 query: T2 is T1 -> {
   where:     month(`date`) ? 2 to 3
   aggregate: early_spring_temp_max is max(temp_max)
@@ -140,18 +151,23 @@ query: T2 is T1 -> {
     is_early_spring is early_spring_temp_max >= 40
 }
 
+-- slap on a primary key
 source: YearStateSpring is T2 extend {
   primary_key: year_state
 }
 >>>markdown
 ## Sidequest: get context
 
-It would be nice to include some contextual information such as how often is a
-given state has early spring. It would also be nice to have some kind of
-reference for how difficult it is for a prophet (groundhog or not) to predict
-whether spring will come for a given place. Let's use an extremely simplistic
-measurement as the distance (absolute difference) from our definition of spring.
-We'll also compute the maximum distance so we have something to normalize with.
+It would be nice to include some contextual information such as:
+
+* How often a given state has early spring.
+
+* A reference point for how difficult it is for a prophet (groundhog or not) to
+  predict whether spring will come for a given place.
+
+For the latter, Let's use an extremely simplistic measurement as the distance
+(absolute difference) from the definition of spring.  We'll also compute the
+maximum distance so we have something to normalize with.
 
 Let's create some sources for that.
 
@@ -170,6 +186,8 @@ query: PES0 is YearStateSpring -> {
     -- vision of our shadow viewing groundpig.
     *, state_distance_factor is state_avg_distance_spring / max_distance_spring
 }
+
+-- slap on a primary key
 source: AllYearsStateSpring is PES0 extend {
   primary_key: state
 }
@@ -185,21 +203,23 @@ query: GroundhogPredictions is Groundhogs -> {
   join_one: AllYearsStateSpring with state
   project:
     *,
+    -- accuracy: is it the most important?
+    accurate is YearStateSpring.is_early_spring = predict_early_spring,
     YearStateSpring.is_early_spring,
+
+    -- or is distance factor more important?
     AllYearsStateSpring.state_avg_distance_spring,
     AllYearsStateSpring.state_distance_factor,
-    accurate is YearStateSpring.is_early_spring = predict_early_spring,
     state_ratio_early_spring is AllYearsStateSpring.ratio_early_spring,
-
 }
 
 >>>markdown
-Finally let's aggregate our primary result (`ratio_accuracy`, the most important
-metric for any prophetic rodent) as well as some reference points such as
-`ratio_predict_early_spring` and `ratio_is_early_spring`.
+Finally let's aggregate our primary result (`ratio_accuracy`, the most
+important (?) metric for any prophetic rodent) as well as some reference
+points.
 
-Let's also get often the groundhog predicts spring to compare against accuracy
-and state averages.
+Let's also compare against the state averages since that might turn up some
+useful insights into shadow meterology.
 
 >>>malloy
 query: GroundhogAccuracy is GroundhogPredictions -> {
@@ -217,6 +237,7 @@ query: GroundhogAccuracy is GroundhogPredictions -> {
     earliest_prediction is min(concat(year_)),
 }
 
+-- Make a view that is neat for displaying
 query: RodentProphets is GroundhogAccuracy -> {
   project:
     name,
@@ -224,8 +245,8 @@ query: RodentProphets is GroundhogAccuracy -> {
     # percent
     ratio_accuracy,
 
-    -- multiply by a thousand to make it seem more significant
-    absolute_prophetic_wisdom is 1000 * ratio_accuracy / state_distance_factor
+    -- b/4242: multiply by a thousand to boost our numbers
+    prophetic_wisdom is 1000 * ratio_accuracy / state_distance_factor
     state_avg_distance_spring,
 
     # percent
@@ -267,39 +288,37 @@ important to remember they might have a different definition of "spring" then
 we do.
 
 But wait, let's see how things look if instead of accuracy we sort by the aptly
-named `maximum_prophetic_wisdom`
+named **prophetic_wisdom**
 
 >>>malloy
 -- Order and display data to draw prophetic conclusions
 run: RodentProphets -> {
-  project: *
-  order_by:
-    absolute_prophetic_wisdom desc
-  where:
-    num_predictions > 5
+  project:  *
+  order_by: prophetic_wisdom desc
+  where:    num_predictions > 5
 }
 
 >>>markdown
 We can now see clearly that General Boregard is as untinteresting as he seemed,
-with only 1,576 points of prophecy.  Being highly accurate in a state that is
-on average 25 degrees above "spring" is not hard.
+with only 1,576 points of wisdom.  Being highly accurate in a state that is on
+average 25 degrees above "spring" is not hard.
 
 Chuckles, as we also thought, is very high (top in fact) with 9,689 points of
 prophetic wisdom. He began his illustrious career in only 2008 and has
 successfully dominated the prophecy charts 15 times. The absolute legend
-Punxsutawney Phil himself clocks in at only 5,569, proving that there is
-still room for the young in the field of prophecy.
+Punxsutawney Phil himself clocks in at only 5,569 widom points, proving that
+there is still room for the young in the field of prophecy.
 
 ## Obligatory legal warning
 
 I am neither a statistician nor a data scientist (I am, in fact, a programmer
 with a love for programming languages including building my own from [absolute
-scratch](http://github.com/civboot/fngi)) and these measurements are completely
-made up. If you know the _proper_ way to compare groundhog abilities please
-open an issue or a PR! If it's not too much work, I will add an adendum :D
+scratch](http://github.com/civboot/fngi)) and many of these methods were made
+up by me because they seemed the best I could do at the time.  If you know the
+_proper_ way to compare groundhog shadow-predictions please open an issue or a
+PR! If it's not too much work, I will add an adendum :D
 
 This code is Community Commons (CC0), but I strongly recommend against copying
-either it or it's methology unless (perhaps) if it's on your own journey to
-learning Malloy or you would like to make fun of it.
-
+either it or it's methology unless (perhaps) it's for your own journey to
+learning Malloy and/or you would like to make fun of my work.
 
