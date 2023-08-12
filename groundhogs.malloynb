@@ -12,8 +12,8 @@ The purpose of this demo is to:
 2. Highlight current sharp edges and areas of improvement for the Malloy team
    from the perspective of said newb.
 
-3. Better understand the prophetic powers of prognosticating groundhogs through
-   the power of data.
+3. Better understand the prophetic abilities of prognosticating groundhogs
+   through the power of data.
 
 Callout to [Data is
 Plural](https://www.data-is-plural.com/archive/2023-02-08-edition/) for the
@@ -90,12 +90,12 @@ source: ... extend { ... } -> { project: ... } -> { primary_key: }
 Anyway, let's work around these issues and transform our data so that its
 dimensions are better aligned with the kinds of questions we might ask it:
 
-* year_state will be the primary key we join against our temperature data.
+* `year_state` will be the primary key we join against our temperature data.
 
 * `id` is the "unique name" of the groundhog that we will group by.
 
-* `saw_shadow` indicates whether the groundhog predicts spring will "come late"
-  (be at least 6 weeks away)
+* `predict_early_spring` indicates whether the groundhog predicts spring will
+  "come early"
 
 >>>malloy
 -- eliminate uninteresting columns
@@ -126,7 +126,7 @@ run: Groundhogs -> {
 ## Get our Temperature data
 
 Now that we have our groundhogs and their predictions, let's get some data to
-join against them. As noted in [Data]{#data} we are using data from
+join against them. As noted in [Data](#data) we are using data from
 [ncei.noaa.gov](http://ncei.noaa.gov) transformed to CSV with a script.
 
 \> Note: temp_max is the **average maximum temperature** across all days in the
@@ -325,9 +325,9 @@ run: RodentProphets -> {
 }
 
 >>>markdown
-We can now see clearly that General Boregard is as untinteresting as he seemed,
-with only 1,576 points of wisdom.  Being highly accurate in a state that is on
-average 25 degrees above "spring" is not hard.
+We can now see clearly that General Beauregard Lee is as untinteresting as he
+seemed, with only 1,576 points of wisdom.  Being highly accurate in a state
+that is on average 25 degrees above "spring" is not hard.
 
 Chuckles, as we also thought, is very high (top in fact) with 9,689 points of
 prophetic wisdom. He began his illustrious career in only 2008 and has
@@ -335,8 +335,9 @@ successfully dominated the prophecy charts 15 times. The absolute legend
 Punxsutawney Phil himself clocks in at only 5,569 widom points, proving that
 there is still room for the young in the field of prophecy.
 
->>>malloy
+Now, let's look at a per state sum of prophetic wisdom.
 
+>>>malloy
 # bar_chart
 run: RodentProphets -> {
   group_by: state
@@ -389,17 +390,14 @@ New York is an up-and-comming competitor!
 ![not a meterologist](https://www.digitalmomblog.com/wp-content/uploads/2022/01/Punxsutawney-Phil-groundhog-day-meme-.jpeg.webp)
 
 I am neither a statistician nor a data scientist (I am, in fact, a programmer
-with a love for programming languages) and many of these methods were made up
-by me because they seemed the best I could do at the time.  If you know the
-_proper_ way to compare groundhog shadow-predictions please open an issue or a
-PR! If it's not too much work, I will add an adendum :D
+with a love for programming) and many of these methods were made up by me
+because they seemed the best I could do at the time.  If you know the _proper_
+way to compare groundhog shadow-predictions please open an issue or a PR! If
+it's not too much work, I will add an adendum :D
 
 This code is Community Commons (CC0), but I strongly recommend against copying
 either it or it's methology unless (perhaps) it's for your own journey to
 learning Malloy and/or you would like to make fun of my work.
-
-## Some Useless Visualizaitons
-Let's see which states have racked up the most prophecy
 
 ## Appendix
 This is a worklog of the issues I hit and help I received while creating this
@@ -407,21 +405,29 @@ demo. Perhaps a Malloy developer will find it useful as a newbie experience
 snapshot or something.
 
 * Dockfixes to quickstart
-  * `project *` https://github.com/malloydata/quickstart/pull/1 related to
+
+  * `project *`  [pull request](https://github.com/malloydata/quickstart/pull/1) related to
     above: there is no schema explorer in the quickstart
-  * [link](https://github.com/malloydata/quickstart/issues/2)
-  * [Minor grammar](https://github.com/malloydata/quickstart/pull/3)
+
+  * quickstart bug [link](https://github.com/malloydata/quickstart/issues/2)
+
+  * [Minor grammar pull request](https://github.com/malloydata/quickstart/pull/3)
 
 * Documentation fixes
+
   * Grammar fixes in the documentation and some rewording suggestions
     ([link](https://github.com/malloydata/malloydata.github.io/pull/75)) Minor
     wording issue with namming a (percent tagged) a ratio as a percent
+
   * ([link](https://github.com/malloydata/malloydata.github.io/pull/81))
 
 * Lanugage issues
+
   * ergonomics issue where you have to repeat yourself with `rename`/etc
     ([link](https://github.com/malloydata/malloy/issues/1288)) would be nice to
+
   * have assertions ([link](https://github.com/malloydata/malloy/issues/1290))
+
   * line chart requires `top` ([link](https://github.com/malloydata/malloy/issues/1291))
 
 I also got help on
