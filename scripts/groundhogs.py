@@ -16,8 +16,7 @@ with open('./raw_data/groundhogs.json') as f:
 # get the fieldnames
 fieldnames = copy.deepcopy(data[0]) # copy
 fieldnames.update(fieldnames.pop('predictions')[0])
-fieldnames['date'] = fieldnames.pop('year')
-fieldnames['date_plus_6_weeks'] = True
+fieldnames['early_spring'] = fieldnames.pop('year')
 fieldnames = list(fieldnames.keys())
 
 GEN = './gen/groundhogs.csv'
@@ -28,8 +27,7 @@ with open(GEN, 'w') as f:
     predictions = d.pop('predictions')
     for p in predictions:
       date = dt.date(int(p.pop('year')), 2, 2)
-      p['date'] = str(date)
-      p['date_plus_6_weeks'] = str(date + dt.timedelta(weeks=6))
+      p['early_spring'] = str(date)
       d.update(p)
       writer.writerow(d)
 

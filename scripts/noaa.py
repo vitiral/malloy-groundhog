@@ -1,3 +1,9 @@
+"""
+Data is from
+https://www.ncei.noaa.gov/pub/data/cirs/climdiv/climdiv-norm-tmaxdv-v1.0.0-{date}
+
+https://www.ncei.noaa.gov/access/monitoring/dyk/us-climate-divisions#grdd_
+"""
 from pprint import pprint as pp
 import csv
 
@@ -111,7 +117,7 @@ fieldnames =  [
 ]
 
 
-GEN = './gen/noa.csv'
+GEN = './gen/TempMax.csv'
 with open(GEN, 'w') as f, open('./raw_data/noaa.txt') as raw:
   w = csv.DictWriter(f, fieldnames=fieldnames)
   w.writeheader()
