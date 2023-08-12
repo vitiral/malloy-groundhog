@@ -83,32 +83,24 @@ dimensions are better aligned with the kinds of questions we might ask it:
 
 * `saw_shadow` indicates whether the groundhog predicts spring will "come late"
   (be at least 6 weeks away)
-
 >>>malloy
--- eliminate uninteresting columns
-query: G1 is GroundhogsRaw -> {
+source: Groundhogs is from(GroundhogsRaw -> {
    project:
     year_ is year(early_spring),
     state,
     year_state is concat(year_, ' ', state),
     predict_early_spring,
     name, id
-}
-
--- slap on a primary key
-source: Groundhogs is G1 extend {
-  -- you can't do `primary_key: (year_, state)`
+}) extend {
   primary_key: year_state
 }
 >>>markdown
 Before we continue, take a look at the current schema.
-
 >>>malloy
 run: Groundhogs -> {
   project: *
   top: 10
 }
-
 >>>markdown
 ## Get our Temperature data
 
@@ -129,16 +121,14 @@ join against them. As noted in [Data]{#data} we are using data from
 2. query doesn't support primary_key
 
 Oh well, such is life with a new-ish language. **Just Do It:**
-
 >>>malloy
 
 source: T1 is duckdb.table('./gen/TempMax.csv') extend {
   accept:      `date`, state, max_temp
   rename:      temp_max is max_temp
 }
-
--- aggregate the stuff we renamed
-query: T2 is T1 -> {
+-- slap on a primary key
+source: YearStateSpring is from(T1 -> {
   where:     month(`date`) ? 2 to 3
   aggregate: early_spring_temp_max is max(temp_max)
   group_by:
@@ -149,10 +139,7 @@ query: T2 is T1 -> {
     *,
     year_state is concat(year_, ' ', state)
     is_early_spring is early_spring_temp_max >= 40
-}
-
--- slap on a primary key
-source: YearStateSpring is T2 extend {
+}) extend {
   primary_key: year_state
 }
 >>>markdown
@@ -170,10 +157,8 @@ For the latter, Let's use an extremely simplistic measurement as the distance
 maximum distance so we have something to normalize with.
 
 Let's create some sources for that.
-
 >>>malloy
-
-query: PES0 is YearStateSpring -> {
+source: AllYearsStateSpring is from(YearStateSpring -> {
   group_by: state
   aggregate:
     ratio_early_spring is sum(pick 1 when is_early_spring else 0) / count()
@@ -185,18 +170,13 @@ query: PES0 is YearStateSpring -> {
     -- The distance factor lets us put a weight on the prophetic
     -- vision of our shadow viewing groundpig.
     *, state_distance_factor is state_avg_distance_spring / max_distance_spring
-}
-
--- slap on a primary key
-source: AllYearsStateSpring is PES0 extend {
+}) extend {
   primary_key: state
 }
-
 >>>markdown
 ## Putting it all together
 Now that we have our data let's join it and perform the calculations we care
 about
-
 >>>malloy
 query: GroundhogPredictions is Groundhogs -> {
   join_one: YearStateSpring with year_state
@@ -212,7 +192,6 @@ query: GroundhogPredictions is Groundhogs -> {
     AllYearsStateSpring.state_distance_factor,
     state_ratio_early_spring is AllYearsStateSpring.ratio_early_spring,
 }
-
 >>>markdown
 Finally let's aggregate our primary result (`ratio_accuracy`, the most
 important (?) metric for any prophetic rodent) as well as some reference
@@ -220,7 +199,6 @@ points.
 
 Let's also compare against the state averages since that might turn up some
 useful insights into shadow meterology.
-
 >>>malloy
 query: GroundhogAccuracy is GroundhogPredictions -> {
   group_by:
@@ -289,7 +267,6 @@ we do.
 
 But wait, let's see how things look if instead of accuracy we sort by the aptly
 named **prophetic_wisdom**
-
 >>>malloy
 -- Order and display data to draw prophetic conclusions
 run: RodentProphets -> {
@@ -297,7 +274,6 @@ run: RodentProphets -> {
   order_by: prophetic_wisdom desc
   where:    num_predictions > 5
 }
-
 >>>markdown
 We can now see clearly that General Boregard is as untinteresting as he seemed,
 with only 1,576 points of wisdom.  Being highly accurate in a state that is on
