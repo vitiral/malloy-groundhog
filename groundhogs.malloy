@@ -1,0 +1,23 @@
+source: _groundhogs is table('duckdb:data/groundhogs.csv')
+extend {
+    primary_key: the_day
+    accept: the_day, lug, shortname, city, region,
+            isGroundhog,  shadow, country
+    rename: saw_shadow is shadow
+}
+
+query: groundhogs is _groundhogs -> {
+    where: country = 'USA'
+}
+
+/*
+run: groundhogs -> {
+    project: *
+    top: 10
+}
+*/
+
+
+/*extend {
+    primary_key: concat(slug, ' ', year)
+}*/
