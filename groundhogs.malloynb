@@ -68,15 +68,8 @@ source: GroundhogsRaw is duckdb.table("./gen/groundhogs.csv") extend {
     predict_early_spring is shadow = 0
 }
 >>>markdown
-The next bit I would _like_ to do in a single pipeline like the following,
-but I have to do it in multiple named steps instead:
-
-```
-source: ... extend { ... } -> { project: ... } -> { primary_key: }
-```
-
-However, there are some things blocking this in Malloy. To work within
-the current constraints we will simply name each "stage" of our pipeline.
+In the next bit we use `from` to avoid needing multiple named steps.
+Apparently `from` will be going away soonish (replaced by _just working_).
 
 Our goal is to transform our data so that its dimensions are better aligned
 with the kinds of questions we might ask it:
@@ -90,18 +83,14 @@ with the kinds of questions we might ask it:
 
 >>>malloy
 -- eliminate uninteresting columns
-query: G1 is GroundhogsRaw -> {
+source: Groundhogs is from(GroundhogsRaw -> {
    project:
     year_ is year(early_spring),
     state,
     year_state is concat(year_, ' ', state),
     predict_early_spring,
     name, id, `day` is early_spring
-}
-
--- slap on a primary key
-source: Groundhogs is G1 extend {
-  -- you can't do `primary_key: (year_, state)`
+}) extend {
   primary_key: year_state
 }
 >>>markdown
@@ -133,7 +122,7 @@ source: T1 is duckdb.table('./gen/TempMax.csv') extend {
 }
 
 -- aggregate the stuff we renamed
-query: T2 is T1 -> {
+source: YearStateSpring is from(T1 -> {
   where:     month(`date`) ? 2 to 3
   aggregate: early_spring_temp_max is max(temp_max)
   group_by:
@@ -145,10 +134,7 @@ query: T2 is T1 -> {
     *,
     year_state is concat(year_, ' ', state)
     is_early_spring is early_spring_temp_max >= SPRING_TEMP
-}
-
--- slap on a primary key
-source: YearStateSpring is T2 extend {
+}) extend {
   primary_key: year_state
 }
 >>>markdown
@@ -169,7 +155,7 @@ Let's create some sources for that.
 
 >>>malloy
 
-query: PES0 is YearStateSpring -> {
+source: AllYearsStateSpring is from(YearStateSpring -> {
   group_by: state
   aggregate:
     ratio_early_spring is sum(pick 1 when is_early_spring else 0) / count()
@@ -183,10 +169,7 @@ query: PES0 is YearStateSpring -> {
     -- The distance factor lets us put a weight on the prophetic
     -- vision of our shadow viewing groundpig.
     *, state_distance_factor is state_avg_distance_spring / max_distance_spring
-}
-
--- slap on a primary key
-source: AllYearsStateSpring is PES0 extend {
+}) extend {
   primary_key: state
 }
 
@@ -332,13 +315,12 @@ Now let's look at the top prophecy states over time
 
 >>>malloy
 -- First let's get the top 5 states which we will call the "Prophecy5"
-query: P5 is RodentProphets -> {
+source: Prophecy5 is from(RodentProphets -> {
   group_by: state
   aggregate: sum_wisdom is sum(prophetic_wisdom)
   order_by: sum_wisdom desc
   top: 5
-}
-source: Prophecy5 is P5 extend { primary_key: state }
+}) extend { primary_key: state }
 
 -- Then let's graph them over time
 -- # line_chart
@@ -348,7 +330,6 @@ run: GroundhogPredictions -> {
   -- project: `day`, year_
   where: `day` < @2000
 }
-
 
 -- Then let's graph them over time
 # line_chart
